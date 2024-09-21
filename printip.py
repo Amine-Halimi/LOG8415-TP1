@@ -1,3 +1,7 @@
+
+# This is just a help file that helps finding the public IPs of running instances so we don't have to look to the web dashboard and connect immediately
+# Created entirely by ChatGPT
+
 import boto3
 
 def print_running_instance_ips():
