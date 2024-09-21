@@ -1,21 +1,36 @@
 import boto3
-import sys
+import sys, os
 from botocore.exceptions import ClientError
+
+def delete_key_pair(ec2_client, key_name):
+    try:
+        response = ec2_client.delete_key_pair(KeyName=key_name)
+        print(f"Key pair '{key_name}' deleted successfully.")
+    except ClientError as e:
+        print(f"Error deleting key pair: {e}")
 
 def get_latest_key_pair(ec2_client):
     try:
-        response = ec2_client.describe_key_pairs()
-        key_pairs = response.get('KeyPairs', [])
+        key_name = "tp1"
 
-        if not key_pairs:
-            print("Error: No key pairs found.")
-            sys.exit(1)
+        # Delete old key pair and create a new one
+        delete_key_pair(ec2_client, key_name)
+        response = ec2_client.create_key_pair(KeyName=key_name)
 
-        key_file_path = f"{key_pairs[1]['KeyName']}.pem"
+        # Extract private key
+        private_key = response['KeyMaterial']
+
+        # Path to save the key
+        save_directory = os.path.expanduser('~/.aws')
+        key_file_path = os.path.join(save_directory, f"{key_name}.pem")
+
+        # Save the key to directory
         with open(key_file_path, 'w') as file:
-            file.write(key_pairs[1]['KeyName'])
+            file.write(private_key)
 
-        return key_pairs[1]['KeyName']
+        os.chmod(key_file_path, 0o400)
+        return key_name
+
     except ClientError as e:
         print(f"Error retrieving key pairs: {e}")
         sys.exit(1)
@@ -124,16 +139,7 @@ def main():
     subnet_id = get_first_subnet(ec2_client, vpc_id)
     print(f"Using Subnet ID: {subnet_id}")
 
-    launch_instances(
-        ec2_resource,
-        IMAGE_ID,
-        INSTANCE_COUNT,
-        INSTANCE_TYPE,
-        key_name,
-        security_group_id,
-        subnet_id
-    )
+    launch_instances( ec2_resource, IMAGE_ID, INSTANCE_COUNT, INSTANCE_TYPE, key_name, security_group_id, subnet_id )
 
 if __name__ == "__main__":
     main()
-
