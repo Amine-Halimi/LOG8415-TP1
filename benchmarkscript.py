@@ -25,8 +25,8 @@ async def main () :
         await asyncio.gather(*tasks)
     
     end_time = time.time()
-    print(f" \ nTotal time taken : { end_time - start_time :.2 f } seconds")
-    print(f" Average time per request : {( end_time - start_time ) /num_requests :.4 f } seconds")
+    print(f"\nTotal time taken:{end_time - start_time :.2 f} seconds")
+    print(f"Average time per request:{(end_time - start_time)/num_requests:.4 f} seconds")
 
 if __name__ == " __main__ ":
     asyncio.run(main ())
