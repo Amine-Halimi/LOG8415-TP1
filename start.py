@@ -1,5 +1,6 @@
 import boto3
 import sys, os
+import subprocess
 from botocore.exceptions import ClientError
 
 def delete_key_pair(ec2_client, key_name):
@@ -11,7 +12,7 @@ def delete_key_pair(ec2_client, key_name):
 
 def get_latest_key_pair(ec2_client):
     try:
-        key_name = "tp1"
+        key_name = "tp1" # Can be changed
 
         # Delete old key pair and create a new one
         delete_key_pair(ec2_client, key_name)
@@ -91,6 +92,26 @@ def get_vpc_id(ec2_client):
         sys.exit(1)
 
 def launch_instances(ec2_resource, image_id, count, instance_type, key_name, security_group_id, subnet_id):
+
+    # Comands for the instance, so you dont have to connect (ssh) to the instance. It waits until you copy the fastAPI file and then activates it
+    # You have to wait circa 30sec until you can test connection through web browser in this format: publicIP:8000
+    user_data_script = '''#!/bin/bash
+        sudo apt update -y
+        sudo apt install -y python3-pip python3-venv
+        cd /home/ubuntu
+        python3 -m venv venv
+        echo "source venv/bin/activate" >> /home/ubuntu/.bashrc
+        source venv/bin/activate
+        pip install fastapi uvicorn
+
+        # Wait for the my_fastapi.py file to be transferred
+        while [ ! -f /home/ubuntu/my_fastapi.py ]; do
+            sleep 5
+        done
+
+        # Start the FastAPI application
+        nohup uvicorn my_fastapi:app --host 0.0.0.0 --port 8000 &
+    '''
     try:
         instances = ec2_resource.create_instances(
             ImageId=image_id,
@@ -100,6 +121,7 @@ def launch_instances(ec2_resource, image_id, count, instance_type, key_name, sec
             KeyName=key_name,
             SecurityGroupIds=[security_group_id],
             SubnetId=subnet_id,
+            UserData=user_data_script,
             TagSpecifications=[
                 {
                     'ResourceType': 'instance',
@@ -141,5 +163,7 @@ def main():
 
     launch_instances( ec2_resource, IMAGE_ID, INSTANCE_COUNT, INSTANCE_TYPE, key_name, security_group_id, subnet_id )
 
+
 if __name__ == "__main__":
     main()
+
