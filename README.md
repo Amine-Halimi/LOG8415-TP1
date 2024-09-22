@@ -5,9 +5,9 @@ Ok here is a guide for what I made so far.
 Once you start your lab, you have to change your credentials in ~/.aws/credentials to AWS CLI in AWS details next to start lab. 
 
 Then you have to create a security group (it is not included in code) with Inbound rules:
-Type - Protocol - Post range - Source
-SSH - TCP - 22 -  security group id
-SSH - TCP - 22 -  0.0.0.0/0
+Type - Protocol - Post range - Source : 
+SSH - TCP - 22 -  security group id &&
+SSH - TCP - 22 -  0.0.0.0/0 &&
 CustomTCP - TCP - 8000 - MyLocalIP
 
 Then  create two subnets with different Availability Zone (may be by default created)
