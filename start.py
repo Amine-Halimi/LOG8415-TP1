@@ -3,19 +3,9 @@ import sys, os
 import subprocess
 from botocore.exceptions import ClientError
 
-def delete_key_pair(ec2_client, key_name):
+def get_key_pair(ec2_client):
     try:
-        response = ec2_client.delete_key_pair(KeyName=key_name)
-        print(f"Key pair '{key_name}' deleted successfully.")
-    except ClientError as e:
-        print(f"Error deleting key pair: {e}")
-
-def get_latest_key_pair(ec2_client):
-    try:
-        key_name = "tp1" # Can be changed
-
-        # Delete old key pair and create a new one
-        delete_key_pair(ec2_client, key_name)
+        key_name = "tp1" 
         response = ec2_client.create_key_pair(KeyName=key_name)
 
         # Extract private key
@@ -30,13 +20,14 @@ def get_latest_key_pair(ec2_client):
             file.write(private_key)
 
         os.chmod(key_file_path, 0o400)
+        print(f"Using Key Pair: {key_name}")
         return key_name
 
     except ClientError as e:
         print(f"Error retrieving key pairs: {e}")
         sys.exit(1)
 
-def get_default_security_group(ec2_client, vpc_id):
+def get_security_group(ec2_client, vpc_id):
     try:
         response = ec2_client.describe_security_groups(
             Filters=[
@@ -54,12 +45,14 @@ def get_default_security_group(ec2_client, vpc_id):
         if not security_groups:
             print("Error: Default security group not found.")
             sys.exit(1)
+
+        print(f"Using Security Group ID: {security_groups[0]['GroupId']}")
         return security_groups[0]['GroupId']
     except ClientError as e:
         print(f"Error retrieving security groups: {e}")
         sys.exit(1)
 
-def get_first_subnet(ec2_client, vpc_id):
+def get_subnet(ec2_client, vpc_id):
     try:
         response = ec2_client.describe_subnets(
             Filters=[
@@ -74,7 +67,8 @@ def get_first_subnet(ec2_client, vpc_id):
             print("Error: No subnets found in the VPC.")
             sys.exit(1)
 
-        return subnets[0]['SubnetId']
+        print(f"Using Subnet ID: {subnets[0]['SubnetId']} and {subnets[1]['SubnetId']}")
+        return [subnets[0]['SubnetId'], subnets[1]['SubnetId']]
     except ClientError as e:
         print(f"Error retrieving subnets: {e}")
         sys.exit(1)
@@ -86,6 +80,7 @@ def get_vpc_id(ec2_client):
         if not vpcs:
             print("Error: No VPCs found.")
             sys.exit(1)
+        print(f"Using VPC ID: {vpcs[0]['VpcId']}")
         return vpcs[0]['VpcId']
     except ClientError as e:
         print(f"Error retrieving VPCs: {e}")
@@ -139,29 +134,70 @@ def launch_instances(ec2_resource, image_id, count, instance_type, key_name, sec
         print(f"Error launching instances: {e}")
         sys.exit(1)
 
+def create_load_balancer(elbv2_client, security_group_id, subnet_ids):
+    try:
+        response = elbv2_client.create_load_balancer(
+            Name='MyLoadBalancer',
+            Subnets=subnet_ids,
+            SecurityGroups=[security_group_id],
+            Scheme='internet-facing',
+            Type='application',
+            IpAddressType='ipv4'
+        )
+        lb_arn = response['LoadBalancers'][0]['LoadBalancerArn']
+        print(f"Created Load Balancer: {lb_arn}")
+        return lb_arn
+    except Exception as e:
+        print(f"Error creating load balancer: {e}")
+        sys.exit(1)
+
+def create_target_group(elbv2_client, name, vpc_id):
+    try:
+        response = elbv2_client.create_target_group(
+            Name=name,
+            Protocol='HTTP',
+            Port=8000,
+            VpcId=vpc_id,
+            HealthCheckProtocol='HTTP',
+            HealthCheckPort='8000',
+            HealthCheckPath='/',
+            TargetType='instance'
+        )
+        target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
+        print(f"Created Target Group: {name}, ARN: {target_group_arn}")
+        return target_group_arn
+    except Exception as e:
+        print(f"Error creating target group: {e}")
+        sys.exit(1)
+
 def main():
     # Initialize AWS clients
     ec2_client = boto3.client('ec2')
     ec2_resource = boto3.resource('ec2')
+    elbv2_client = boto3.client('elbv2')
 
     # Parameters
     IMAGE_ID = 'ami-0e86e20dae9224db8'   # Replace with your AMI ID
-    INSTANCE_TYPE = 't2.micro'
-    INSTANCE_COUNT = 1
+    INSTANCE_micro, INSTANCE_large = 1, 1
 
+    # Get VPC, Key name (has to be brand new everytime, is deleted in terminate.py), security group and subnet
     vpc_id = get_vpc_id(ec2_client)
-    print(f"Using VPC ID: {vpc_id}")
+    key_name = get_key_pair(ec2_client)
+    security_group_id = get_security_group(ec2_client, vpc_id) # Here you have to have already created one security group with Inbound rules: [SSH-TCP-SecurityGroupId, SSH-TCP-0.0.0.0, CustomTCP-TCP-MyLocalIP]
+    subnet_ids = get_subnet(ec2_client, vpc_id) # Here you have to have at least two subnets created
 
-    key_name = get_latest_key_pair(ec2_client)
-    print(f"Using Key Pair: {key_name}")
+    # Launch Instances micro and large
+    if INSTANCE_micro > 0:
+        launch_instances( ec2_resource, IMAGE_ID, INSTANCE_micro, 't2.micro', key_name, security_group_id, subnet_ids[0] )
+    if INSTANCE_large > 0:
+        launch_instances( ec2_resource, IMAGE_ID, INSTANCE_large, 't2.large', key_name, security_group_id, subnet_ids[1] )
 
-    security_group_id = get_default_security_group(ec2_client, vpc_id)
-    print(f"Using Security Group ID: {security_group_id}")
+    # Create load balancer
+    lb_arn = create_load_balancer(elbv2_client, security_group_id, subnet_ids)
 
-    subnet_id = get_first_subnet(ec2_client, vpc_id)
-    print(f"Using Subnet ID: {subnet_id}")
-
-    launch_instances( ec2_resource, IMAGE_ID, INSTANCE_COUNT, INSTANCE_TYPE, key_name, security_group_id, subnet_id )
+    # Create cluster targets
+    tg_cluster1_arn = create_target_group(elbv2_client, 'cluster1', vpc_id)
+    tg_cluster2_arn = create_target_group(elbv2_client, 'cluster2', vpc_id)
 
 
 if __name__ == "__main__":
