@@ -1,5 +1,5 @@
 import boto3
-import sys, os
+import sys, os, time
 import subprocess
 from botocore.exceptions import ClientError
 
@@ -130,6 +130,7 @@ def launch_instances(ec2_resource, image_id, count, instance_type, key_name, sec
             ]
         )
         print(f"Launched {len(instances)} instance(s) successfully.")
+        return instances
     except ClientError as e:
         print(f"Error launching instances: {e}")
         sys.exit(1)
@@ -145,7 +146,7 @@ def create_load_balancer(elbv2_client, security_group_id, subnet_ids):
             IpAddressType='ipv4'
         )
         lb_arn = response['LoadBalancers'][0]['LoadBalancerArn']
-        print(f"Created Load Balancer: {lb_arn}")
+        print(f"Created Load Balancer")
         return lb_arn
     except Exception as e:
         print(f"Error creating load balancer: {e}")
@@ -164,11 +165,27 @@ def create_target_group(elbv2_client, name, vpc_id):
             TargetType='instance'
         )
         target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
-        print(f"Created Target Group: {name}, ARN: {target_group_arn}")
+        print(f"Created Target Group: {name}")
         return target_group_arn
     except Exception as e:
         print(f"Error creating target group: {e}")
         sys.exit(1)
+
+        
+def register_targets(elbv2_client, target_group_arn, instance_ids):
+    try:
+        targets = [{'Id': instance_id} for instance_id in instance_ids]
+        elbv2_client.register_targets(
+            TargetGroupArn=target_group_arn,
+            Targets=targets
+        )
+        print(f"Registered instances: {instance_ids}")
+        return
+    except Exception as e:
+        print(f"Error registering targets: {e}")
+        # Wait if the instances are not running and do it again
+        time.sleep(5)
+        return register_targets(elbv2_client, target_group_arn, instance_ids)
 
 def main():
     # Initialize AWS clients
@@ -188,9 +205,9 @@ def main():
 
     # Launch Instances micro and large
     if INSTANCE_micro > 0:
-        launch_instances( ec2_resource, IMAGE_ID, INSTANCE_micro, 't2.micro', key_name, security_group_id, subnet_ids[0] )
+        instances_cluster1 = launch_instances( ec2_resource, IMAGE_ID, INSTANCE_micro, 't2.micro', key_name, security_group_id, subnet_ids[0] )
     if INSTANCE_large > 0:
-        launch_instances( ec2_resource, IMAGE_ID, INSTANCE_large, 't2.large', key_name, security_group_id, subnet_ids[1] )
+        instances_cluster2 = launch_instances( ec2_resource, IMAGE_ID, INSTANCE_large, 't2.large', key_name, security_group_id, subnet_ids[1] )
 
     # Create load balancer
     lb_arn = create_load_balancer(elbv2_client, security_group_id, subnet_ids)
@@ -198,6 +215,11 @@ def main():
     # Create cluster targets
     tg_cluster1_arn = create_target_group(elbv2_client, 'cluster1', vpc_id)
     tg_cluster2_arn = create_target_group(elbv2_client, 'cluster2', vpc_id)
+
+    instance_ids_cluster1 = [instance.id for instance in instances_cluster1]
+    instance_ids_cluster2 = [instance.id for instance in instances_cluster2]
+    register_targets(elbv2_client, tg_cluster1_arn, instance_ids_cluster1)
+    register_targets(elbv2_client, tg_cluster2_arn, instance_ids_cluster2)
 
 
 if __name__ == "__main__":
