@@ -19,8 +19,8 @@ Now start start.py
 
 Execute printip.py to show all IPs of instances
 
-Now wait cca 30sec then
-curl http://<IP of instance>:8000/
+Now wait 30sec then
+curl http://<IP of instance>:8000/clusterX
 and it should answer request
 
 Check the DNS of the load balancer in the AWS website, wait until the state is "Active" and try then
