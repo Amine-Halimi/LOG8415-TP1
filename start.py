@@ -219,25 +219,65 @@ def create_listener(elbv2_client, load_balancer_arn, tg_cluster1_arn, tg_cluster
             Port=8000,
             DefaultActions=[
                 {
-                    'Type': 'forward',
-                    'ForwardConfig': {
-                        'TargetGroups': [
-                            {
-                                'TargetGroupArn': tg_cluster1_arn,
-                                'Weight': 1  # Equal weight
-                            },
-                            {
-                                'TargetGroupArn': tg_cluster2_arn,
-                                'Weight': 1  # Equal weight
-                            }
-                        ]
+                    'Type': 'fixed-response',
+                    'FixedResponseConfig': {
+                        'ContentType': 'text/plain',
+                        'MessageBody': '404 Not Found',
+                        'StatusCode': '404'
                     }
                 }
             ]
         )
-        print("Listener created for load balancer with weighted routing")
+        listener_arn = response['Listeners'][0]['ListenerArn']
+        print("Listener created for load balancer without rules.")
+
+        # Now create rules for path-based routing
+        create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluster2_arn)
     except ClientError as e:
         print(f"Error creating listener: {e}")
+
+def create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluster2_arn):
+    try:
+        # Rule for /cluster1
+        elbv2_client.create_rule(
+            ListenerArn=listener_arn,
+            Conditions=[
+                {
+                    'Field': 'path-pattern',
+                    'Values': ['/cluster1*']
+                }
+            ],
+            Priority=1,
+            Actions=[
+                {
+                    'Type': 'forward',
+                    'TargetGroupArn': tg_cluster1_arn
+                }
+            ]
+        )
+        print("Rule created for /cluster1.")
+
+        # Rule for /cluster2
+        elbv2_client.create_rule(
+            ListenerArn=listener_arn,
+            Conditions=[
+                {
+                    'Field': 'path-pattern',
+                    'Values': ['/cluster2*']
+                }
+            ],
+            Priority=2,
+            Actions=[
+                {
+                    'Type': 'forward',
+                    'TargetGroupArn': tg_cluster2_arn
+                }
+            ]
+        )
+        print("Rule created for /cluster2.")
+    except ClientError as e:
+        print(f"Error creating listener rules: {e}")
+
 
 def main():
     # Initialize AWS clients
