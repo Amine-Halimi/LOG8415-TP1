@@ -211,6 +211,34 @@ def transfer_file(instance_ip, key_file, local_file, remote_file):
     except Exception as e:
         print(f"Error transferring file to {instance_ip}: {e}")
 
+def create_listener(elbv2_client, load_balancer_arn, tg_cluster1_arn, tg_cluster2_arn):
+    try:
+        response = elbv2_client.create_listener(
+            LoadBalancerArn=load_balancer_arn,
+            Protocol='HTTP',
+            Port=8000,
+            DefaultActions=[
+                {
+                    'Type': 'forward',
+                    'ForwardConfig': {
+                        'TargetGroups': [
+                            {
+                                'TargetGroupArn': tg_cluster1_arn,
+                                'Weight': 1  # Equal weight
+                            },
+                            {
+                                'TargetGroupArn': tg_cluster2_arn,
+                                'Weight': 1  # Equal weight
+                            }
+                        ]
+                    }
+                }
+            ]
+        )
+        print("Listener created for load balancer with weighted routing")
+    except ClientError as e:
+        print(f"Error creating listener: {e}")
+
 def main():
     # Initialize AWS clients
     ec2_client = boto3.client('ec2')
@@ -259,14 +287,18 @@ def main():
     # Create load balancer
     lb_arn = create_load_balancer(elbv2_client, security_group_id, subnet_ids)
 
-    # Create cluster targets
+    # Create target groups
     tg_cluster1_arn = create_target_group(elbv2_client, 'cluster1', vpc_id)
     tg_cluster2_arn = create_target_group(elbv2_client, 'cluster2', vpc_id)
 
+    # Register instances to target groups
     instance_ids_cluster1 = [instance.id for instance in instances_cluster1]
     instance_ids_cluster2 = [instance.id for instance in instances_cluster2]
     register_targets(elbv2_client, tg_cluster1_arn, instance_ids_cluster1)
     register_targets(elbv2_client, tg_cluster2_arn, instance_ids_cluster2)
+
+    # Create listener for load balancer
+    create_listener(elbv2_client, lb_arn, tg_cluster1_arn, tg_cluster2_arn)
 
 
 if __name__ == "__main__":
