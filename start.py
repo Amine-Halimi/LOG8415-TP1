@@ -218,7 +218,7 @@ def main():
     elbv2_client = boto3.client('elbv2')
 
     # Parameters
-    IMAGE_ID = 'ami-0e86e20dae9224db8'   # Reemplaza con tu ID de AMI
+    IMAGE_ID = 'ami-0e86e20dae9224db8'
     INSTANCE_micro, INSTANCE_large = 1, 1
 
     # Get VPC, Key name (has to be brand new everytime, is deleted in terminate.py), security group and subnet
@@ -240,8 +240,8 @@ def main():
     # Wait until the instances are "running" and obtain their public IPs
     instance_ips = []
     for instance in instances_cluster1 + instances_cluster2:
-        instance.wait_until_running()  # Esperar hasta que la instancia esté en estado 'running'
-        instance.reload()  # Cargar los detalles de la instancia actualizados
+        instance.wait_until_running()
+        instance.reload() 
         instance_ips.append(instance.public_ip_address)
 
     # Print the public IPs
@@ -251,7 +251,7 @@ def main():
 
     # Transfer my_fastapi.py to all instances
     key_file_path = os.path.join(os.path.expanduser('~/.aws'), f"{key_name}.pem")
-    local_file_path = "my_fastapi.py"  # Ruta local al archivo que deseas transferir
+    local_file_path = "my_fastapi.py"
 
     for ip in instance_ips:
         transfer_file(ip, key_file_path, local_file_path, "/home/ubuntu/my_fastapi.py")
