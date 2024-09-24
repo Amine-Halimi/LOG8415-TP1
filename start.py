@@ -2,6 +2,7 @@ import boto3
 import sys, os, time
 import subprocess
 from botocore.exceptions import ClientError
+import paramiko
 
 def get_key_pair(ec2_client):
     try:
@@ -187,6 +188,29 @@ def register_targets(elbv2_client, target_group_arn, instance_ids):
         time.sleep(5)
         return register_targets(elbv2_client, target_group_arn, instance_ids)
 
+def transfer_file(instance_ip, key_file, local_file, remote_file):
+    try:
+        # Create a SSH client instance
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # Connect to the instance
+        ssh_client.connect(instance_ip, username='ubuntu', key_filename=key_file)
+
+        # Crear a SCP instance
+        scp = paramiko.SFTPClient.from_transport(ssh_client.get_transport())
+        
+        # Transfer the file
+        scp.put(local_file, remote_file)
+        
+        # Close connections
+        scp.close()
+        ssh_client.close()
+        print(f"File {local_file} transferred to {instance_ip}:{remote_file}")
+    
+    except Exception as e:
+        print(f"Error transferring file to {instance_ip}: {e}")
+
 def main():
     # Initialize AWS clients
     ec2_client = boto3.client('ec2')
@@ -194,20 +218,43 @@ def main():
     elbv2_client = boto3.client('elbv2')
 
     # Parameters
-    IMAGE_ID = 'ami-0e86e20dae9224db8'   # Replace with your AMI ID
+    IMAGE_ID = 'ami-0e86e20dae9224db8'   # Reemplaza con tu ID de AMI
     INSTANCE_micro, INSTANCE_large = 1, 1
 
     # Get VPC, Key name (has to be brand new everytime, is deleted in terminate.py), security group and subnet
     vpc_id = get_vpc_id(ec2_client)
     key_name = get_key_pair(ec2_client)
-    security_group_id = get_security_group(ec2_client, vpc_id) # Here you have to have already created one security group with Inbound rules: [SSH-TCP-SecurityGroupId, SSH-TCP-0.0.0.0, CustomTCP-TCP-MyLocalIP]
-    subnet_ids = get_subnet(ec2_client, vpc_id) # Here you have to have at least two subnets created
+    security_group_id = get_security_group(ec2_client, vpc_id)
+    subnet_ids = get_subnet(ec2_client, vpc_id)
 
     # Launch Instances micro and large
+    instances_cluster1 = []
+    instances_cluster2 = []
+    
     if INSTANCE_micro > 0:
-        instances_cluster1 = launch_instances( ec2_resource, IMAGE_ID, INSTANCE_micro, 't2.micro', key_name, security_group_id, subnet_ids[0] )
+        instances_cluster1 = launch_instances(ec2_resource, IMAGE_ID, INSTANCE_micro, 't2.micro', key_name, security_group_id, subnet_ids[0])
+    
     if INSTANCE_large > 0:
-        instances_cluster2 = launch_instances( ec2_resource, IMAGE_ID, INSTANCE_large, 't2.large', key_name, security_group_id, subnet_ids[1] )
+        instances_cluster2 = launch_instances(ec2_resource, IMAGE_ID, INSTANCE_large, 't2.large', key_name, security_group_id, subnet_ids[1])
+
+    # Wait until the instances are "running" and obtain their public IPs
+    instance_ips = []
+    for instance in instances_cluster1 + instances_cluster2:
+        instance.wait_until_running()  # Esperar hasta que la instancia esté en estado 'running'
+        instance.reload()  # Cargar los detalles de la instancia actualizados
+        instance_ips.append(instance.public_ip_address)
+
+    # Print the public IPs
+    print("Public IPs of instances:", instance_ips)
+
+    time.sleep(60)
+
+    # Transfer my_fastapi.py to all instances
+    key_file_path = os.path.join(os.path.expanduser('~/.aws'), f"{key_name}.pem")
+    local_file_path = "my_fastapi.py"  # Ruta local al archivo que deseas transferir
+
+    for ip in instance_ips:
+        transfer_file(ip, key_file_path, local_file_path, "/home/ubuntu/my_fastapi.py")
 
     # Create load balancer
     lb_arn = create_load_balancer(elbv2_client, security_group_id, subnet_ids)
