@@ -4,6 +4,8 @@ This is where we will put our code and scripts.
 Ok here is a guide for what I made so far.
 Once you start your lab, you have to change your credentials in ~/.aws/credentials to AWS CLI in AWS details next to start lab. 
 
+Change your AMI ID in start.py
+
 Then you have to create a security group (it is not included in code) with Inbound rules:
 Type - Protocol - Post range - Source : 
 SSH - TCP - 22 -  security group id &&
