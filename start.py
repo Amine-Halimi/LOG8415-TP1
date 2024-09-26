@@ -147,7 +147,8 @@ def create_load_balancer(elbv2_client, security_group_id, subnet_ids):
             IpAddressType='ipv4'
         )
         lb_arn = response['LoadBalancers'][0]['LoadBalancerArn']
-        print(f"Created Load Balancer")
+        lb_dns_name = response['LoadBalancers'][0]['DNSName']
+        print(f"Created Load Balancer DNS: {lb_dns_name}")
         return lb_arn
     except Exception as e:
         print(f"Error creating load balancer: {e}")
