@@ -64,6 +64,14 @@ def delete_key_pair(ec2_client, key_name):
     except IndexError:
         print(f"Key pair '{target_group_name}' not found.")
 
+def delete_time_file():
+    try:
+        os.remove("fastest_instances.txt")
+        print(f"fastest_instances file deleted")
+
+    except OSError as e:
+        print(f"File fastest_instances not found")
+
 if __name__ == "__main__":
     ec2_client = boto3.client('ec2')
     elbv2_client = boto3.client('elbv2')
@@ -73,4 +81,5 @@ if __name__ == "__main__":
     delete_target_group(elbv2_client, 'cluster1')
     delete_target_group(elbv2_client, 'cluster2')
     delete_key_pair(ec2_client, 'tp1')
+    delete_time_file()
     
