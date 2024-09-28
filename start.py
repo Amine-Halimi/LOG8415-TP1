@@ -179,6 +179,8 @@ def create_load_balancer(elbv2_client, security_group_id, subnet_ids):
         lb_arn = response['LoadBalancers'][0]['LoadBalancerArn']
         lb_dns_name = response['LoadBalancers'][0]['DNSName']
         print(f"Created Load Balancer DNS: {lb_dns_name}")
+        with open('load_balancer_dns.txt', 'w') as file:
+            file.write(lb_dns_name)
         return lb_arn
     except Exception as e:
         print(f"Error creating load balancer: {e}")
@@ -392,37 +394,38 @@ def update_target_group(elbv2_client, fastest_instance, target_group_arn, regist
     try:
         # Deregister all instances except the fastest one
         if fastest_instance['InstanceId'] not in registered_targets:
-            print(f"Deregistering all {instance_type} instances except {fastest_instance['InstanceId']}")
+            #print(f"Deregistering all {instance_type} instances except {fastest_instance['InstanceId']}")
             for instance_id in registered_targets:
                 if instance_id != fastest_instance['InstanceId']:
                     elbv2_client.deregister_targets(
                         TargetGroupArn=target_group_arn,
                         Targets=[{'Id': instance_id}]
                     )
-                    print(f"Deregistered instance {instance_id} from {instance_type} target group")
+                    #print(f"Deregistered instance {instance_id} from {instance_type} target group")
             # Register the fastest instance
             elbv2_client.register_targets(
                 TargetGroupArn=target_group_arn,
                 Targets=[{'Id': fastest_instance['InstanceId']}]
             )
-            print(f"Registered fastest {instance_type} instance {fastest_instance['InstanceId']} to target group")
+            #print(f"Registered fastest {instance_type} instance {fastest_instance['InstanceId']} to target group")
         else:
-            print(f"Fastest {instance_type} instance {fastest_instance['InstanceId']} already registered")
+            time.sleep(0.01)
+            #print(f"Fastest {instance_type} instance {fastest_instance['InstanceId']} already registered")
     except Exception as e:
         print(f"Error updating {instance_type} target group: {e}")
 
 
 def update_target_groups(elbv2_client, fastest_micro, fastest_large, tg_cluster1_arn, tg_cluster2_arn):
     try:
-        print(f"Fastest t2.micro: {fastest_micro}")
-        print(f"Fastest t2.large: {fastest_large}")
+        #print(f"Fastest t2.micro: {fastest_micro}")
+        #print(f"Fastest t2.large: {fastest_large}")
 
         # Get the registered instances in each target group
         registered_micro_targets = get_registered_targets(elbv2_client, tg_cluster1_arn)
         registered_large_targets = get_registered_targets(elbv2_client, tg_cluster2_arn)
 
-        print(f"Current registered t2.micro instances: {registered_micro_targets}")
-        print(f"Current registered t2.large instances: {registered_large_targets}")
+        #print(f"Current registered t2.micro instances: {registered_micro_targets}")
+        #print(f"Current registered t2.large instances: {registered_large_targets}")
 
         # Update the target groups for t2.micro and t2.large
         update_target_group(elbv2_client, fastest_micro, tg_cluster1_arn, registered_micro_targets, "t2.micro")
@@ -432,8 +435,8 @@ def update_target_groups(elbv2_client, fastest_micro, fastest_large, tg_cluster1
         final_micro_targets = get_registered_targets(elbv2_client, tg_cluster1_arn)
         final_large_targets = get_registered_targets(elbv2_client, tg_cluster2_arn)
 
-        print(f"Final registered t2.micro instances: {final_micro_targets}")
-        print(f"Final registered t2.large instances: {final_large_targets}")
+        #print(f"Final registered t2.micro instances: {final_micro_targets}")
+        #print(f"Final registered t2.large instances: {final_large_targets}")
 
     except Exception as e:
         print(f"Error updating target groups: {e}")
