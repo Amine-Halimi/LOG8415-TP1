@@ -434,7 +434,7 @@ def main():
         elbv2_client = boto3.client('elbv2')
 
         # Define essential AWS configuration
-        vpc_id = 'vpc-0236625801c8deca8'
+        vpc_id = get_vpc_id(ec2_client)
         image_id = 'ami-0e86e20dae9224db8'
 
         # Get key pair, security group, and subnets
