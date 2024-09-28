@@ -108,24 +108,49 @@ def launch_ec2_instances(ec2_client, image_id, instance_type, key_name, security
         key_name: The key pair name to use for SSH access.
         security_group_id: The security group ID.
         subnet_id: The subnet ID.
+        UserData: Script to run FastAPI file
         num_instances: Number of instances to launch.
     Returns:
         List of EC2 instance objects.
     """
+    user_data_script = '''#!/bin/bash
+            sudo apt update -y
+            sudo apt install -y python3-pip python3-venv
+            cd /home/ubuntu
+            python3 -m venv venv
+            echo "source venv/bin/activate" >> /home/ubuntu/.bashrc
+            source venv/bin/activate
+            pip install fastapi uvicorn
+
+            # Wait for the my_fastapi.py file to be transferred
+            while [ ! -f /home/ubuntu/my_fastapi.py ]; do
+                sleep 5
+            done
+
+            # Start the FastAPI application
+            nohup uvicorn my_fastapi:app --host 0.0.0.0 --port 8000 &
+        '''
     try:
-        # Launch instances
-        response = ec2_client.run_instances(
+        response = instances = ec2_client.run_instances(
             ImageId=image_id,
+            MinCount=num_instances,
+            MaxCount=num_instances,
             InstanceType=instance_type,
             KeyName=key_name,
             SecurityGroupIds=[security_group_id],
             SubnetId=subnet_id,
-            MinCount=num_instances,  # Minimum number of instances to launch
-            MaxCount=num_instances,  # Maximum number of instances to launch
-            TagSpecifications=[{
-                'ResourceType': 'instance',
-                'Tags': [{'Key': 'Name', 'Value': 'Cluster Instance'}]
-            }]
+            UserData=user_data_script,
+            TagSpecifications=[
+                {
+                    'ResourceType': 'instance',
+                    'Tags': [
+                        {
+                            'Key': 'Name',
+                            'Value': 'LabInstance'
+                        }
+                    ]
+                }
+            ]
         )
 
         # Use the EC2 resource to interact with the instances
