@@ -3,7 +3,7 @@ import aiohttp
 import time
 
 async def call_endpoint_http (session, request_num):
-    url = "your load balancer url"
+    url = "http://myLoadBalancer-1736106880.us-east-1.elb.amazonaws.com:8000/cluster2"
     headers = {"content-type":"application/json"}
     
     try:
@@ -19,14 +19,14 @@ async def call_endpoint_http (session, request_num):
 async def main () :
     num_requests = 1000
     start_time = time.time()
-    
+
     async with aiohttp . ClientSession () as session :
         tasks = [call_endpoint_http(session, i) for i in range (num_requests)]
         await asyncio.gather(*tasks)
-    
-    end_time = time.time()
-    print(f"\nTotal time taken:{end_time - start_time :.2 f} seconds")
-    print(f"Average time per request:{(end_time - start_time)/num_requests:.4 f} seconds")
 
-if __name__ == " __main__ ":
-    asyncio.run(main ())
+    end_time = time.time()
+    print(f"\nTotal time taken: {end_time - start_time:.2f} seconds")
+    print(f"Average time per request:{(end_time - start_time)/num_requests:.4f} seconds")
+
+#if __name__ == " __main__ ":
+asyncio.run(main ())
