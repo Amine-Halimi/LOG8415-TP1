@@ -242,21 +242,8 @@ def create_listener(elbv2_client, load_balancer_arn, tg_cluster1_arn, tg_cluster
     except ClientError as e:
         print(f"Error creating listener: {e}")
 
-def create_listener_rules(elbv2_client, listener_arn, fastest_micro, fastest_large):
+def create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluster2_arn):
     try:
-        # Validate the structure of fastest_micro
-        if not isinstance(fastest_micro, dict) or 'InstanceId' not in fastest_micro or 'TargetGroupArn' not in fastest_micro:
-            print(f"Invalid structure for fastest_micro: {fastest_micro}")
-            return
-
-        # Validate the structure of fastest_large
-        if not isinstance(fastest_large, dict) or 'InstanceId' not in fastest_large or 'TargetGroupArn' not in fastest_large:
-            print(f"Invalid structure for fastest_large: {fastest_large}")
-            return
-
-        # Debugging prints to ensure the structure is correct
-        print(f"Fastest Micro Instance: {fastest_micro}")
-        print(f"Fastest Large Instance: {fastest_large}")
 
         # Rule for /cluster1 using the fastest t2.micro instance
         elbv2_client.create_rule(
@@ -271,11 +258,11 @@ def create_listener_rules(elbv2_client, listener_arn, fastest_micro, fastest_lar
             Actions=[
                 {
                     'Type': 'forward',
-                    'TargetGroupArn': fastest_micro['TargetGroupArn']  # Use fastest instance
+                    'TargetGroupArn': tg_cluster1_arn
                 }
             ]
         )
-        print(f"Rule created for /cluster1 with fastest t2.micro instance: {fastest_micro['InstanceId']}.")
+        print(f"Rule created for /cluster1 with fastest t2.micro instance: {tg_cluster1_arn}.")
 
         # Rule for /cluster2 using the fastest t2.large instance
         elbv2_client.create_rule(
@@ -290,11 +277,11 @@ def create_listener_rules(elbv2_client, listener_arn, fastest_micro, fastest_lar
             Actions=[
                 {
                     'Type': 'forward',
-                    'TargetGroupArn': fastest_large['TargetGroupArn']  # Use fastest instance
+                    'TargetGroupArn': tg_cluster2_arn
                 }
             ]
         )
-        print(f"Rule created for /cluster2 with fastest t2.large instance: {fastest_large['InstanceId']}.")
+        print(f"Rule created for /cluster2 with fastest t2.large instance: {tg_cluster2_arn}.")
 
     except ClientError as e:
         print(f"Error creating listener rules: {e}")
