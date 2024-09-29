@@ -5,6 +5,13 @@ from botocore.exceptions import ClientError
 import paramiko
 
 def get_key_pair(ec2_client):
+    """
+        Retrieve the key pair
+        Args:
+            ec2_client: The boto3 ec2 client
+        Returns:
+            Key name
+        """
     key_name = "tp1"
     try:
         ec2_client.describe_key_pairs(KeyNames=[key_name])
@@ -14,8 +21,8 @@ def get_key_pair(ec2_client):
     except ClientError as e:
         if 'InvalidKeyPair.NotFound' in str(e):
             try:
+                # Create a key pair if it doesnt exist
                 response = ec2_client.create_key_pair(KeyName=key_name)
-
                 private_key = response['KeyMaterial']
 
                 # Save the key to directory
@@ -35,17 +42,48 @@ def get_key_pair(ec2_client):
             print(f"Error retrieving key pairs: {e}")
             sys.exit(1)
 
+def get_vpc_id(ec2_client):
+    """
+        Function to get VPC id
+        Args:
+            ec2_client: The boto3 ec2 client
+        Returns:
+            VPC id
+        """
+    try:
+        # Get all VPC's
+        response = ec2_client.describe_vpcs()
+        vpcs = response.get('Vpcs', [])
+        if not vpcs:
+            print("Error: No VPCs found.")
+            sys.exit(1)
+        print(f"Using VPC ID: {vpcs[0]['VpcId']}")
+        # Take the first one
+        return vpcs[0]['VpcId']
 
-def create_security_group(ec2_client, vpc_id, group_name="my-security-group", description="My Security Group"):
+    except ClientError as e:
+        print(f"Error retrieving VPCs: {e}")
+        sys.exit(1)
+
+def create_security_group(ec2_client, vpc_id, description="My Security Group"):
+    """
+        Create security group with valid inbound rules
+        Args:
+            ec2_client: The boto3 ec2 client
+            vpc_id: VPC id
+            description: Description for security group
+        Returns:
+            Security group id
+        """
     inbound_rules = [
         {'protocol': 'tcp', 'port_range': 8000, 'source': '0.0.0.0/0'},
         {'protocol': 'tcp', 'port_range': 22, 'source': '0.0.0.0/0'},
         {'protocol': 'tcp', 'port_range': 8000, 'source': '96.127.217.181/32'}]
     try:
         # Create a security group
-        print(f"Creating security group '{group_name}' in VPC ID: {vpc_id}")
+        print(f"Creating security group my-security-group in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
-            GroupName=group_name,
+            GroupName="my-security-group",
             Description=description,
             VpcId=vpc_id
         )
@@ -62,44 +100,25 @@ def create_security_group(ec2_client, vpc_id, group_name="my-security-group", de
                 'IpRanges': [{'CidrIp': rule['source']}]
             })
 
-        # Security group inbound rules
+        # Add inbound rules
         ec2_client.authorize_security_group_ingress(
             GroupId=security_group_id,
             IpPermissions=ip_permissions
         )
-        print(f"Ingress rules added to security group: {security_group_id}")
         return security_group_id
     except ClientError as e:
         print(f"Error adding ingress rules: {e}")
         sys.exit(1)
 
-def get_security_group(ec2_client, vpc_id):
-    try:
-        print(f"Fetching security group for VPC ID: {vpc_id}")
-        response = ec2_client.describe_security_groups(
-            Filters=[
-                {
-                    'Name': 'group-name',
-                    'Values': ['default']  
-                },
-                {
-                    'Name': 'vpc-id',
-                    'Values': [vpc_id]
-                }
-            ]
-        )
-        security_groups = response.get('SecurityGroups', [])
-        if not security_groups:
-            print("Error: Default security group not found.")
-            sys.exit(1)
-
-        print(f"Using Security Group ID: {security_groups[0]['GroupId']}")
-        return security_groups[0]['GroupId']
-    except ClientError as e:
-        print(f"Error retrieving security groups: {e}")
-        sys.exit(1)
-
 def get_subnet(ec2_client, vpc_id):
+    """
+    Function to get Subnet id
+    Args:
+        ec2_client: The boto3 ec2 client
+        vpc_id: VPC id
+    Returns:
+        Subnet id
+    """
     try:
         response = ec2_client.describe_subnets(
             Filters=[
@@ -118,19 +137,6 @@ def get_subnet(ec2_client, vpc_id):
         return [subnets[0]['SubnetId'], subnets[1]['SubnetId']]
     except ClientError as e:
         print(f"Error retrieving subnets: {e}")
-        sys.exit(1)
-
-def get_vpc_id(ec2_client):
-    try:
-        response = ec2_client.describe_vpcs()
-        vpcs = response.get('Vpcs', [])
-        if not vpcs:
-            print("Error: No VPCs found.")
-            sys.exit(1)
-        print(f"Using VPC ID: {vpcs[0]['VpcId']}")
-        return vpcs[0]['VpcId']
-    except ClientError as e:
-        print(f"Error retrieving VPCs: {e}")
         sys.exit(1)
 
 def launch_ec2_instances(ec2_client, image_id, instance_type, key_name, security_group_id, subnet_id, num_instances):
@@ -190,6 +196,7 @@ def launch_ec2_instances(ec2_client, image_id, instance_type, key_name, security
 
         ec2_resource = boto3.resource('ec2')
 
+        # Retrieve instance objects using the InstanceId
         instance_objects = [ec2_resource.Instance(instance['InstanceId']) for instance in response['Instances']]
 
         print(f"Launched {num_instances} {instance_type} instances.")
@@ -199,28 +206,51 @@ def launch_ec2_instances(ec2_client, image_id, instance_type, key_name, security
         print(f"Error launching instances: {e}")
         sys.exit(1)
 
-def create_load_balancer(elbv2_client, security_group_id, subnet_ids):
+def create_load_balancer(elbv2_client, security_group_id, subnet_id):
+    """
+    Function to create load balancer
+    Args:
+        elbv2_client: elbv2 client
+        security_group_id: security group id
+        subnet_id: subnet id
+    Returns:
+        Load balancer ARN
+    """
     try:
         response = elbv2_client.create_load_balancer(
             Name='MyLoadBalancer',
-            Subnets=subnet_ids,
+            Subnets=subnet_id,
             SecurityGroups=[security_group_id],
             Scheme='internet-facing',
             Type='application',
             IpAddressType='ipv4'
         )
+        # Get load balancer ARN
         lb_arn = response['LoadBalancers'][0]['LoadBalancerArn']
+
+        #Get load balancer link and save it to file for benchmarking
         lb_dns_name = response['LoadBalancers'][0]['DNSName']
         print(f"Created Load Balancer DNS: {lb_dns_name}")
         with open('load_balancer_dns.txt', 'w') as file:
             file.write(lb_dns_name)
+
         return lb_arn
     except Exception as e:
         print(f"Error creating load balancer: {e}")
         sys.exit(1)
 
 def create_target_group(elbv2_client, name, vpc_id):
+    """
+    Function to target group
+    Args:
+        elbv2_client: elbv2 client
+        name: name of target group
+        vpc_id: VPC id
+    Returns:
+        Target group ARN
+    """
     try:
+        # Create target group
         response = elbv2_client.create_target_group(
             Name=name,
             Protocol='HTTP',
@@ -233,6 +263,7 @@ def create_target_group(elbv2_client, name, vpc_id):
         )
         target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
         print(f"Created Target Group: {name}")
+
         return target_group_arn
     except Exception as e:
         print(f"Error creating target group: {e}")
@@ -240,29 +271,49 @@ def create_target_group(elbv2_client, name, vpc_id):
 
         
 def register_targets(elbv2_client, target_group_arn, instance_ids):
+    """
+    Function to register targets to instances
+    Args:
+        elbv2_client: elbv2 client
+        target_group_arn: target group ARN
+        instance_ids: IDs of the instances belonging to the target group
+    Returns:
+    """
     try:
+        # Get IDs of instances and register them
         targets = [{'Id': instance_id} for instance_id in instance_ids]
         elbv2_client.register_targets(
             TargetGroupArn=target_group_arn,
             Targets=targets
         )
+
         print(f"Registered instances: {instance_ids}")
         return
     except Exception as e:
         print(f"Error registering targets: {e}")
+        # Wait if the instances are not running and do it again
         time.sleep(5)
         return register_targets(elbv2_client, target_group_arn, instance_ids)
 
 def transfer_file(instance_ip, key_file, local_file, remote_file):
+    """
+    Function to transfer FastAPIs file to instances
+    Args:
+        instance_ip: public IP of the instance
+        key_file: path to pem key file
+        local_file: path to FstAPI local file
+        remote_file: path to desired directory
+    Returns:
+    """
     try:
-        # SSH client instance
+        # Create an SSH client instance
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         # Connect to the instance
         ssh_client.connect(instance_ip, username='ubuntu', key_filename=key_file)
 
-        # Create a SCP instance
+        # Crear a SCP instance
         scp = paramiko.SFTPClient.from_transport(ssh_client.get_transport())
         
         # Transfer the file
@@ -277,7 +328,17 @@ def transfer_file(instance_ip, key_file, local_file, remote_file):
         print(f"Error transferring file to {instance_ip}: {e}")
 
 def create_listener(elbv2_client, load_balancer_arn, tg_cluster1_arn, tg_cluster2_arn):
+    """
+    Function to create a listener for routing
+    Args:
+        elbv2_client: boto3 elbv client
+        load_balancer_arn: load balancer ARN
+        tg_cluster1_arn: ARN of target group cluster 1
+        tg_cluster2_arn: ARN of target group cluster 2
+    Returns:
+    """
     try:
+        # Create listener
         response = elbv2_client.create_listener(
             LoadBalancerArn=load_balancer_arn,
             Protocol='HTTP',
@@ -293,15 +354,25 @@ def create_listener(elbv2_client, load_balancer_arn, tg_cluster1_arn, tg_cluster
                 }
             ]
         )
+        # Get listener ARN
         listener_arn = response['Listeners'][0]['ListenerArn']
         print("Listener created for load balancer without rules.")
 
-        # Rules for path-based routing
+        # Now create rules for path-based routing
         create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluster2_arn)
     except ClientError as e:
         print(f"Error creating listener: {e}")
 
 def create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluster2_arn):
+    """
+    Function to create a listener rules for routing from clusters
+    Args:
+        elbv2_client: boto3 elbv client
+        listener_arn: listener ARN
+        tg_cluster1_arn: ARN of target group cluster 1
+        tg_cluster2_arn: ARN of target group cluster 2
+    Returns:
+    """
     try:
 
         # Rule for /cluster1 using the fastest t2.micro instance
@@ -347,60 +418,43 @@ def create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluste
 
 def get_instance_metrics(instance_id):
     """
-    Query CloudWatch for the CPU utilization of a given instance.
+    Query CloudWatch for the CPU utilization
     Args:
-        instance_id: The ID of the EC2 instance.
+        instance_id: Instance id
     Returns:
-        The average CPU utilization of the instance over the last 5 minutes.
+        The average CPU utilization of the instance
     """
     cloudwatch = boto3.client('cloudwatch')
 
-    # CPU Utilization data for the last 5 minutes
+    # Fetch CPU Utilization data
     response = cloudwatch.get_metric_statistics(
         Namespace='AWS/EC2',
         MetricName='CPUUtilization',
         Dimensions=[{'Name': 'InstanceId', 'Value': instance_id}],
         StartTime=datetime.datetime.utcnow() - datetime.timedelta(minutes=5),
         EndTime=datetime.datetime.utcnow(),
-        Period=300,  # 5-minute period
+        Period=300,
         Statistics=['Average']
     )
 
-    # CPU utilization value from the response
+    # Extract the CPU utilization value from the response
     datapoints = response.get('Datapoints', [])
     if not datapoints:
         return None
 
-    # Average CPU utilization
+    # Return the average CPU utilization
     return datapoints[0]['Average']
 
-def get_target_group_arn(elbv2_client, instance_id):
-    """
-    Retrieve the Target Group ARN for a given instance.
-    Args:
-        elbv2_client: The boto3 Elastic Load Balancing v2 client.
-        instance_id: The ID of the EC2 instance.
-    Returns:
-        The target group ARN associated with the instance.
-    """
-    response = elbv2_client.describe_target_health(
-        TargetGroupArn='your-target-group-arn',
-        Targets=[
-            {
-                'Id': instance_id
-            }
-        ]
-    )
-
-    target_group_arn = None
-    for tg in response['TargetHealthDescriptions']:
-        if tg['Target']['Id'] == instance_id:
-            target_group_arn = tg['TargetGroupArn']
-            break
-
-    return target_group_arn
 
 def get_registered_targets(elbv2_client, target_group_arn):
+    """
+    Get instance IDs registered in target group
+    Args:
+        elbv2_client: boro3 elbv2 client
+        target_group_arn: target group ARN
+    Returns:
+        Registered targets
+    """
     try:
         response = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
         registered_targets = [target['Target']['Id'] for target in response['TargetHealthDescriptions']]
@@ -411,8 +465,14 @@ def get_registered_targets(elbv2_client, target_group_arn):
 
 def update_target_group(elbv2_client, fastest_instance, target_group_arn, registered_targets, instance_type):
     """
-    Update the target group by deregistering all instances except the fastest one
-    and registering the fastest instance if it's not already registered.
+    Function to update the target group by deregistering all instances except the fastest one and registering the fastest instance if it's not already registered
+    Args:
+        elbv2_client: boro3 elbv2 client
+        fastest_instance: data of currently fastest intance
+        target_group_arn: target group ARN
+        registered_targets: instances registered in target group
+        instance_type: type of an instance
+    Returns:
     """
     try:
         # Deregister all instances except the fastest one
@@ -423,18 +483,28 @@ def update_target_group(elbv2_client, fastest_instance, target_group_arn, regist
                         TargetGroupArn=target_group_arn,
                         Targets=[{'Id': instance_id}]
                     )
+
             # Register the fastest instance
             elbv2_client.register_targets(
                 TargetGroupArn=target_group_arn,
                 Targets=[{'Id': fastest_instance['InstanceId']}]
             )
-        else:
-            time.sleep(0.01)
+
     except Exception as e:
         print(f"Error updating {instance_type} target group: {e}")
 
 
 def update_target_groups(elbv2_client, fastest_micro, fastest_large, tg_cluster1_arn, tg_cluster2_arn):
+    """
+    Function which checks registered instances in group and updates them to the fastest instance
+    Args:
+        elbv2_client: boro3 elbv2 client
+        fastest_micro: data of fastest micro instance
+        fastest_large: data of fastest large instance
+        tg_cluster1_arn: target group cluster1 ARN
+        tg_cluster2_arn: target group cluster2 ARN
+    Returns:
+    """
     try:
         #print(f"Fastest t2.micro: {fastest_micro}")
         #print(f"Fastest t2.large: {fastest_large}")
@@ -442,9 +512,6 @@ def update_target_groups(elbv2_client, fastest_micro, fastest_large, tg_cluster1
         # Get the registered instances in each target group
         registered_micro_targets = get_registered_targets(elbv2_client, tg_cluster1_arn)
         registered_large_targets = get_registered_targets(elbv2_client, tg_cluster2_arn)
-
-        #print(f"Current registered t2.micro instances: {registered_micro_targets}")
-        #print(f"Current registered t2.large instances: {registered_large_targets}")
 
         # Update the target groups for t2.micro and t2.large
         update_target_group(elbv2_client, fastest_micro, tg_cluster1_arn, registered_micro_targets, "t2.micro")
@@ -454,14 +521,14 @@ def update_target_groups(elbv2_client, fastest_micro, fastest_large, tg_cluster1
         final_micro_targets = get_registered_targets(elbv2_client, tg_cluster1_arn)
         final_large_targets = get_registered_targets(elbv2_client, tg_cluster2_arn)
 
-        #print(f"Final registered t2.micro instances: {final_micro_targets}")
-        #print(f"Final registered t2.large instances: {final_large_targets}")
-
     except Exception as e:
         print(f"Error updating target groups: {e}")
 
 
 def main():
+    """
+    Main function, executes other functions
+    """
     try:
         # Initialize EC2 and ELB clients
         ec2_client = boto3.client('ec2')
@@ -519,8 +586,8 @@ def main():
         tg_cluster2_arn = create_target_group(elbv2_client, 'cluster2', vpc_id)
 
         # Register instances to target groups
-        register_to_target_groups(elbv2_client, tg_cluster1_arn, [instance.id for instance in instances_cluster1])
-        register_to_target_groups(elbv2_client, tg_cluster2_arn, [instance.id for instance in instances_cluster2])
+        register_targets(elbv2_client, tg_cluster1_arn, [instance.id for instance in instances_cluster1])
+        register_targets(elbv2_client, tg_cluster2_arn, [instance.id for instance in instances_cluster2])
 
         # Create listener for load balancer
         create_listener(elbv2_client, lb_arn, tg_cluster1_arn, tg_cluster2_arn)
@@ -549,30 +616,22 @@ def main():
                 print("Unable to retrieve the fastest instances. Retrying...")
                 time.sleep(10)
 
-            time.sleep(60)  # Check every 60 seconds
+            time.sleep(60)
 
     except Exception as e:
         print(f"Error during execution: {e}")
 
 
-# Register instances to target groups
-def register_to_target_groups(elbv2_client, target_group_arn, instance_ids):
-    """
-    Registers instances to a target group.
-    """
-    register_targets(elbv2_client, target_group_arn, instance_ids)
-
-
 def load_fastest_instances(instance_ids, ec2_client, tg_micro_arn, tg_large_arn, retries=5, wait_time=30):
     """
-    Determine the fastest instances based on CloudWatch metrics (CPU utilization).
+    Determine the fastest instances based on CloudWatch metrics
     Args:
-        instance_ids: List of EC2 instance IDs to evaluate.
-        ec2_client: boto3 EC2 client to get instance types.
-        tg_micro_arn: ARN for the target group for t2.micro instances.
-        tg_large_arn: ARN for the target group for t2.large instances.
-        retries: Number of retries in case no data is available.
-        wait_time: Seconds to wait between retries.
+        instance_ids: IDs of instances
+        ec2_client: boto3 EC2 client
+        tg_micro_arn: target group micro ARN
+        tg_large_arn: target group large ARN
+        retries: number of retries in case no data is available
+        wait_time: seconds to wait between retries
     Returns:
         Two dictionaries containing instance ID and target group ARN for the fastest t2.micro and t2.large instances.
     """
@@ -585,7 +644,7 @@ def load_fastest_instances(instance_ids, ec2_client, tg_micro_arn, tg_large_arn,
             cpu_utilization = get_instance_metrics(instance_id)
 
             if cpu_utilization is not None:
-                # Determine the instance type
+                # Determine the instance type by describing the instance
                 try:
                     instance_desc = ec2_client.describe_instances(InstanceIds=[instance_id])
                     instance_type = instance_desc['Reservations'][0]['Instances'][0]['InstanceType']
@@ -610,21 +669,22 @@ def load_fastest_instances(instance_ids, ec2_client, tg_micro_arn, tg_large_arn,
             # Return the fastest t2.micro and t2.large instances
             fastest_micro = {
                 'InstanceId': micro_instances[0][0],
-                'TargetGroupArn': tg_micro_arn  # Dynamically provided target group ARN for t2.micro
+                'TargetGroupArn': tg_micro_arn
             }
 
             fastest_large = {
                 'InstanceId': large_instances[0][0],
-                'TargetGroupArn': tg_large_arn  # Dynamically provided target group ARN for t2.large
+                'TargetGroupArn': tg_large_arn
             }
 
             return fastest_micro, fastest_large
         else:
             print(f"Not enough metrics data yet. Retrying {retries - attempt - 1} more times...")
-            time.sleep(wait_time)  # Wait for CloudWatch to gather data
+            time.sleep(wait_time) 
 
     print("No sufficient CloudWatch data available after retries.")
     return None, None
 
 if __name__ == "__main__":
     main()
+
