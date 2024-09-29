@@ -3,6 +3,9 @@ import os
 from botocore.exceptions import ClientError
 
 def terminate_running_instances():
+    """
+    Function to delete all running instances
+    """
     session = boto3.Session()
     ec2 = session.resource('ec2')
 
@@ -18,6 +21,9 @@ def terminate_running_instances():
         print(f"Terminating instances: {instance_ids}")
 
 def remove_key_file():
+    """
+    Function to remove key file
+    """
     # Get path of key file
     key_file_path = os.path.expanduser("~/.aws/tp1.pem")
 
@@ -32,17 +38,24 @@ def remove_key_file():
         print(f"An error occurred: {e}")
         
 def delete_security_group(ec2_client, group_name):
+    """
+    Function to delete security group
+    """
     try:
-        response = ec2_client.delete_security_group(
+        ec2_client.delete_security_group(
             GroupName=group_name
         )
         print(f"Successfully deleted security group: {group_name}")
-        return response
     except ClientError as e:
         print(f"Error deleting security group: {e}")
-        return None
 
 def delete_load_balancer(elbv2_client, load_balancer_name):
+    """
+    Function to delete load balancer
+    Args:
+        elbv2_client: elbv2 boro3 client
+        load_balancer_name: Name of load balancer
+    """
     try:
         response = elbv2_client.describe_load_balancers(Names=[load_balancer_name])
         load_balancer_arn = response['LoadBalancers'][0]['LoadBalancerArn']
@@ -55,6 +68,12 @@ def delete_load_balancer(elbv2_client, load_balancer_name):
         print(f"Load balancer '{load_balancer_name}' not found.")
         
 def delete_target_group(elbv2_client, target_group_name):
+    """
+    Function to delete target group
+    Args:
+        elbv2_client: elbv2 boro3 client
+        target_group_name: Name of target group
+    """
     try:
         response = elbv2_client.describe_target_groups(Names=[target_group_name])
         target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
@@ -67,6 +86,12 @@ def delete_target_group(elbv2_client, target_group_name):
         print(f"Target group '{target_group_name}' not found.")
 
 def delete_key_pair(ec2_client, key_name):
+    """
+    Function to delete key pair
+    Args:
+        elbv2_client: elbv2 boro3 client
+        key_name: Name of the key
+    """
     try:
         response = ec2_client.delete_key_pair(KeyName=key_name)
         print(f"Key pair '{key_name}' deleted successfully.")
