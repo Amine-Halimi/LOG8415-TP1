@@ -406,15 +406,6 @@ def get_target_group_arn(elbv2_client, instance_id):
 
     return target_group_arn
 
-def extract_instance_info(line):
-    parts = line.split()
-    instance_id = parts[3]
-    public_ip = parts[-1]
-    return {
-        'InstanceId': instance_id,
-        'PublicIpAddress': public_ip
-    }
-
 def get_registered_targets(elbv2_client, target_group_arn):
     try:
         response = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
@@ -498,10 +489,10 @@ def main():
         # Launch EC2 instances for each cluster
         print("Launching EC2 instances...")
         instances_cluster1 = launch_ec2_instances(
-            ec2_client, image_id, 't2.micro', key_name, security_group_id, subnet_ids[0], 1
+            ec2_client, image_id, 't2.micro', key_name, security_group_id, subnet_ids[0], 5
         )
         instances_cluster2 = launch_ec2_instances(
-            ec2_client, image_id, 't2.large', key_name, security_group_id, subnet_ids[1], 1
+            ec2_client, image_id, 't2.large', key_name, security_group_id, subnet_ids[1], 4
         )
 
         # Wait for all instances to be in "running" state and collect instance details
@@ -522,10 +513,13 @@ def main():
 
         # Transfer my_fastapi.py to all instances
         key_file_path = os.path.join(os.path.expanduser('~/.aws'), f"{key_name}.pem")
-        local_file_path = "my_fastapi.py"
+        local_file_path_micro = ["my_fastapi1.py", "my_fastapi2.py", "my_fastapi3.py", "my_fastapi4.py", "my_fastapi5.py"]
+        local_file_path_large = ["my_fastapi1.py", "my_fastapi2.py", "my_fastapi3.py", "my_fastapi4.py"]
 
-        for ip in instance_ips:
-            transfer_file(ip, key_file_path, local_file_path, "/home/ubuntu/my_fastapi.py")
+        for num, micro_instance in enumerate(instances_cluster1):
+            transfer_file(micro_instance.public_ip_address, key_file_path, local_file_path_micro[num], "/home/ubuntu/my_fastapi.py")
+        for num, large_instance in enumerate(instances_cluster2):
+            transfer_file(large_instance.public_ip_address, key_file_path, local_file_path_large[num], "/home/ubuntu/my_fastapi.py")
 
         # Create load balancer
         lb_arn = create_load_balancer(elbv2_client, security_group_id, subnet_ids)
