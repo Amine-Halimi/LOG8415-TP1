@@ -30,6 +30,17 @@ def remove_key_file():
         print(f"Error: Permission denied when trying to delete '{key_file_path}'.")
     except Exception as e:
         print(f"An error occurred: {e}")
+        
+def delete_security_group(ec2_client, group_name):
+    try:
+        response = ec2_client.delete_security_group(
+            GroupName=group_name
+        )
+        print(f"Successfully deleted security group: {group_name}")
+        return response
+    except ClientError as e:
+        print(f"Error deleting security group: {e}")
+        return None
 
 def delete_load_balancer(elbv2_client, load_balancer_name):
     try:
@@ -69,6 +80,7 @@ if __name__ == "__main__":
     elbv2_client = boto3.client('elbv2')
     terminate_running_instances()
     remove_key_file()
+    delete_security_group(ec2_client, "my-security-group")
     delete_load_balancer(elbv2_client, 'MyLoadBalancer')
     delete_target_group(elbv2_client, 'cluster1')
     delete_target_group(elbv2_client, 'cluster2')

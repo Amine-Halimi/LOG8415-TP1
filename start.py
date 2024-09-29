@@ -38,6 +38,44 @@ def get_key_pair(ec2_client):
             print(f"Error retrieving key pairs: {e}")
             sys.exit(1)
 
+
+def create_security_group(ec2_client, vpc_id, group_name="my-security-group", description="My Security Group"):
+    inbound_rules = [
+        {'protocol': 'tcp', 'port_range': 8000, 'source': '0.0.0.0/0'},
+        {'protocol': 'tcp', 'port_range': 22, 'source': '0.0.0.0/0'},
+        {'protocol': 'tcp', 'port_range': 8000, 'source': '96.127.217.181/32'}]
+    try:
+        # Create a security group
+        print(f"Creating security group '{group_name}' in VPC ID: {vpc_id}")
+        response = ec2_client.create_security_group(
+            GroupName=group_name,
+            Description=description,
+            VpcId=vpc_id
+        )
+        security_group_id = response['GroupId']
+        print(f"Created Security Group ID: {security_group_id}")
+
+        ip_permissions = []
+
+        for rule in inbound_rules:
+            ip_permissions.append({
+                'IpProtocol': rule['protocol'],
+                'FromPort': rule['port_range'],
+                'ToPort': rule['port_range'],
+                'IpRanges': [{'CidrIp': rule['source']}]
+            })
+
+        # Add inbound rules
+        ec2_client.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpPermissions=ip_permissions
+        )
+        print(f"Ingress rules added to security group: {security_group_id}")
+        return security_group_id
+    except ClientError as e:
+        print(f"Error adding ingress rules: {e}")
+        sys.exit(1)
+
 def get_security_group(ec2_client, vpc_id):
     try:
         print(f"Fetching security group for VPC ID: {vpc_id}")
@@ -454,16 +492,16 @@ def main():
 
         # Get key pair, security group, and subnets
         key_name = get_key_pair(ec2_client)
-        security_group_id = get_security_group(ec2_client, vpc_id)
+        security_group_id = create_security_group(ec2_client, vpc_id)
         subnet_ids = get_subnet(ec2_client, vpc_id)
 
         # Launch EC2 instances for each cluster
         print("Launching EC2 instances...")
         instances_cluster1 = launch_ec2_instances(
-            ec2_client, image_id, 't2.micro', key_name, security_group_id, subnet_ids[0], 4
+            ec2_client, image_id, 't2.micro', key_name, security_group_id, subnet_ids[0], 1
         )
         instances_cluster2 = launch_ec2_instances(
-            ec2_client, image_id, 't2.large', key_name, security_group_id, subnet_ids[1], 4
+            ec2_client, image_id, 't2.large', key_name, security_group_id, subnet_ids[1], 1
         )
 
         # Wait for all instances to be in "running" state and collect instance details
