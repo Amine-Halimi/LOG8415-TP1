@@ -65,25 +65,41 @@ def get_vpc_id(ec2_client):
         print(f"Error retrieving VPCs: {e}")
         sys.exit(1)
 
+
 def create_security_group(ec2_client, vpc_id, description="My Security Group"):
     """
-        Create security group with valid inbound rules
-        Args:
-            ec2_client: The boto3 ec2 client
-            vpc_id: VPC id
-            description: Description for security group
-        Returns:
-            Security group id
-        """
+    Create or reuse a security group with valid inbound rules.
+    Args:
+        ec2_client: The boto3 ec2 client.
+        vpc_id: VPC id.
+        description: Description for security group.
+    Returns:
+        Security group id.
+    """
+    group_name = "my-security-group"
     inbound_rules = [
         {'protocol': 'tcp', 'port_range': 8000, 'source': '0.0.0.0/0'},
         {'protocol': 'tcp', 'port_range': 22, 'source': '0.0.0.0/0'},
-        {'protocol': 'tcp', 'port_range': 8000, 'source': '96.127.217.181/32'}]
+        {'protocol': 'tcp', 'port_range': 8000, 'source': '96.127.217.181/32'}
+    ]
+
     try:
-        # Create a security group
-        print(f"Creating security group my-security-group in VPC ID: {vpc_id}")
+        # Check if the security group already exists
+        response = ec2_client.describe_security_groups(
+            Filters=[
+                {'Name': 'group-name', 'Values': [group_name]},
+                {'Name': 'vpc-id', 'Values': [vpc_id]}
+            ]
+        )
+        if response['SecurityGroups']:
+            security_group_id = response['SecurityGroups'][0]['GroupId']
+            print(f"Using existing Security Group ID: {security_group_id}")
+            return security_group_id
+
+        # If the security group doesn't exist, create a new one
+        print(f"Creating security group {group_name} in VPC ID: {vpc_id}")
         response = ec2_client.create_security_group(
-            GroupName="my-security-group",
+            GroupName=group_name,
             Description=description,
             VpcId=vpc_id
         )
@@ -91,10 +107,9 @@ def create_security_group(ec2_client, vpc_id, description="My Security Group"):
         print(f"Created Security Group ID: {security_group_id}")
 
         ip_permissions = []
-
         for rule in inbound_rules:
             ip_permissions.append({
-                'IpProtocol': rule['protocol'],
+                'IpProtocol': 'tcp',
                 'FromPort': rule['port_range'],
                 'ToPort': rule['port_range'],
                 'IpRanges': [{'CidrIp': rule['source']}]
@@ -105,10 +120,15 @@ def create_security_group(ec2_client, vpc_id, description="My Security Group"):
             GroupId=security_group_id,
             IpPermissions=ip_permissions
         )
+
         return security_group_id
+
     except ClientError as e:
-        print(f"Error adding ingress rules: {e}")
-        sys.exit(1)
+        if 'InvalidPermission.Duplicate' in str(e):
+            print(f"Ingress rule already exists for Security Group: {group_name}")
+        else:
+            print(f"Error adding ingress rules: {e}")
+        return None
 
 def get_subnet(ec2_client, vpc_id):
     """
@@ -431,8 +451,8 @@ def get_instance_metrics(instance_id):
         Namespace='AWS/EC2',
         MetricName='CPUUtilization',
         Dimensions=[{'Name': 'InstanceId', 'Value': instance_id}],
-        StartTime=datetime.datetime.utcnow() - datetime.timedelta(minutes=5),
-        EndTime=datetime.datetime.utcnow(),
+        StartTime=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=5),
+        EndTime=datetime.datetime.now(datetime.UTC),
         Period=300,
         Statistics=['Average']
     )
