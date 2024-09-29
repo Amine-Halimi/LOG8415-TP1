@@ -7,7 +7,6 @@ import paramiko
 def get_key_pair(ec2_client):
     key_name = "tp1"
     try:
-        # You don't use the 'response' variable here, so this line can be removed
         ec2_client.describe_key_pairs(KeyNames=[key_name])
         print(f"Key Pair {key_name} already exists. Using the existing key.")
         return key_name
@@ -15,10 +14,8 @@ def get_key_pair(ec2_client):
     except ClientError as e:
         if 'InvalidKeyPair.NotFound' in str(e):
             try:
-                # You can keep this response if you want to handle its data
                 response = ec2_client.create_key_pair(KeyName=key_name)
 
-                # If you're not using 'response' elsewhere, this line can be simplified or removed
                 private_key = response['KeyMaterial']
 
                 # Save the key to directory
@@ -65,7 +62,7 @@ def create_security_group(ec2_client, vpc_id, group_name="my-security-group", de
                 'IpRanges': [{'CidrIp': rule['source']}]
             })
 
-        # Add inbound rules
+        # Security group inbound rules
         ec2_client.authorize_security_group_ingress(
             GroupId=security_group_id,
             IpPermissions=ip_permissions
@@ -83,11 +80,11 @@ def get_security_group(ec2_client, vpc_id):
             Filters=[
                 {
                     'Name': 'group-name',
-                    'Values': ['default']  # Ensure this is the correct group name
+                    'Values': ['default']  
                 },
                 {
                     'Name': 'vpc-id',
-                    'Values': [vpc_id]  # Ensure this VPC ID is correct
+                    'Values': [vpc_id]
                 }
             ]
         )
@@ -191,10 +188,8 @@ def launch_ec2_instances(ec2_client, image_id, instance_type, key_name, security
             ]
         )
 
-        # Use the EC2 resource to interact with the instances
         ec2_resource = boto3.resource('ec2')
 
-        # Retrieve instance objects using the InstanceId
         instance_objects = [ec2_resource.Instance(instance['InstanceId']) for instance in response['Instances']]
 
         print(f"Launched {num_instances} {instance_type} instances.")
@@ -255,20 +250,19 @@ def register_targets(elbv2_client, target_group_arn, instance_ids):
         return
     except Exception as e:
         print(f"Error registering targets: {e}")
-        # Wait if the instances are not running and do it again
         time.sleep(5)
         return register_targets(elbv2_client, target_group_arn, instance_ids)
 
 def transfer_file(instance_ip, key_file, local_file, remote_file):
     try:
-        # Create an SSH client instance
+        # SSH client instance
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         # Connect to the instance
         ssh_client.connect(instance_ip, username='ubuntu', key_filename=key_file)
 
-        # Crear a SCP instance
+        # Create a SCP instance
         scp = paramiko.SFTPClient.from_transport(ssh_client.get_transport())
         
         # Transfer the file
@@ -302,7 +296,7 @@ def create_listener(elbv2_client, load_balancer_arn, tg_cluster1_arn, tg_cluster
         listener_arn = response['Listeners'][0]['ListenerArn']
         print("Listener created for load balancer without rules.")
 
-        # Now create rules for path-based routing
+        # Rules for path-based routing
         create_listener_rules(elbv2_client, listener_arn, tg_cluster1_arn, tg_cluster2_arn)
     except ClientError as e:
         print(f"Error creating listener: {e}")
@@ -361,7 +355,7 @@ def get_instance_metrics(instance_id):
     """
     cloudwatch = boto3.client('cloudwatch')
 
-    # Fetch CPU Utilization data for the last 5 minutes
+    # CPU Utilization data for the last 5 minutes
     response = cloudwatch.get_metric_statistics(
         Namespace='AWS/EC2',
         MetricName='CPUUtilization',
@@ -372,12 +366,12 @@ def get_instance_metrics(instance_id):
         Statistics=['Average']
     )
 
-    # Extract the CPU utilization value from the response
+    # CPU utilization value from the response
     datapoints = response.get('Datapoints', [])
     if not datapoints:
         return None
 
-    # Return the average CPU utilization
+    # Average CPU utilization
     return datapoints[0]['Average']
 
 def get_target_group_arn(elbv2_client, instance_id):
@@ -390,7 +384,7 @@ def get_target_group_arn(elbv2_client, instance_id):
         The target group ARN associated with the instance.
     """
     response = elbv2_client.describe_target_health(
-        TargetGroupArn='your-target-group-arn',  # Replace with your logic to find the target group
+        TargetGroupArn='your-target-group-arn',
         Targets=[
             {
                 'Id': instance_id
@@ -423,23 +417,19 @@ def update_target_group(elbv2_client, fastest_instance, target_group_arn, regist
     try:
         # Deregister all instances except the fastest one
         if fastest_instance['InstanceId'] not in registered_targets:
-            #print(f"Deregistering all {instance_type} instances except {fastest_instance['InstanceId']}")
             for instance_id in registered_targets:
                 if instance_id != fastest_instance['InstanceId']:
                     elbv2_client.deregister_targets(
                         TargetGroupArn=target_group_arn,
                         Targets=[{'Id': instance_id}]
                     )
-                    #print(f"Deregistered instance {instance_id} from {instance_type} target group")
             # Register the fastest instance
             elbv2_client.register_targets(
                 TargetGroupArn=target_group_arn,
                 Targets=[{'Id': fastest_instance['InstanceId']}]
             )
-            #print(f"Registered fastest {instance_type} instance {fastest_instance['InstanceId']} to target group")
         else:
             time.sleep(0.01)
-            #print(f"Fastest {instance_type} instance {fastest_instance['InstanceId']} already registered")
     except Exception as e:
         print(f"Error updating {instance_type} target group: {e}")
 
@@ -595,7 +585,7 @@ def load_fastest_instances(instance_ids, ec2_client, tg_micro_arn, tg_large_arn,
             cpu_utilization = get_instance_metrics(instance_id)
 
             if cpu_utilization is not None:
-                # Determine the instance type by describing the instance
+                # Determine the instance type
                 try:
                     instance_desc = ec2_client.describe_instances(InstanceIds=[instance_id])
                     instance_type = instance_desc['Reservations'][0]['Instances'][0]['InstanceType']
@@ -638,4 +628,3 @@ def load_fastest_instances(instance_ids, ec2_client, tg_micro_arn, tg_large_arn,
 
 if __name__ == "__main__":
     main()
-
