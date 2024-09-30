@@ -132,12 +132,12 @@ def create_security_group(ec2_client, vpc_id, description="My Security Group"):
 
 def get_subnet(ec2_client, vpc_id):
     """
-    Function to get Subnet id
+    Function to get 2 Subnet ID's for each group
     Args:
         ec2_client: The boto3 ec2 client
         vpc_id: VPC id
     Returns:
-        Subnet id
+        Subnet ID's
     """
     try:
         response = ec2_client.describe_subnets(
